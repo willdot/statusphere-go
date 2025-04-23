@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <title>Statusphere-go</title>
+        <link rel="icon" type="image/x-icon" href="/public/favicon.ico" />
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <link href="/public/app.css" rel="stylesheet" />
+    </head>
+    <body>
+        <div id="header">
+            <h1>Statusphere Go!</h1>
+            <p>Set your status on the Atmosphere.</p>
+        </div>
+        <div class="container">
+            <form action="/login" method="post" class="login-form">
+                <input
+                    type="text"
+                    name="handle"
+                    placeholder="Enter your handle (eg alice.bsky.social)"
+                    required
+                />
+                <button type="submit">Log in</button>
+            </form>
+            {{if .Error}}
+            <div>{{ .Error }}</div>
+            {{else}}
+            <div>
+                <br />
+            </div>
+            {{end}}
+            <div class="signup-cta">
+                Don't have an account on the Atmosphere?
+                <a href="https://bsky.app">Sign up for Bluesky</a> to create one
+                now!
+            </div>
+        </div>
+    </body>
+</html>

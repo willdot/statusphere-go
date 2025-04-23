@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <title>Statusphere-go</title>
+        <link rel="icon" type="image/x-icon" href="/public/favicon.ico" />
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <link href="/public/app.css" rel="stylesheet" />
+    </head>
+    <body>
+        <div id="header">
+            <h1>Statusphere</h1>
+            <p>Set your status on the Atmosphere.</p>
+        </div>
+        <div class="container">
+            <div class="card">
+                <form action="/logout" method="post" class="session-form">
+                    {{if .DisplayName}}
+                    <div>Hi {{.DisplayName}}. What's your status today?</div>
+                    {{else}}
+                    <div>Hi. What's your status today?</div>
+                    {{end}}
+                    <div>
+                        <button type="submit">Log out</button>
+                    </div>
+                </form>
+            </div>
+            <form action="/status" method="post" class="status-options">
+                {{range .AvailableStatus}}
+                <button type="submit" name="status" value="{{ . }}">
+                    {{.}}
+                </button>
+                {{end}}
+            </form>
+            {{range .UsersStatus}}
+            <div class="status-line">
+                <div>
+                    <div class="status">{{.Status}}</div>
+                </div>
+                <div class="desc">
+                    <a class="author" href="{{ .HandleURL }}">@{{.Handle}}</a>
+                    {{if .IsToday}} is feeling {{.Status}} today {{else}} was
+                    feeling {{.Status}} on {{.Date}} {{end}}
+                </div>
+            </div>
+            {{end}}
+        </div>
+    </body>
+</html>
