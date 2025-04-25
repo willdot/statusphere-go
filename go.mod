@@ -8,8 +8,6 @@ require (
 	github.com/avast/retry-go/v4 v4.6.1
 	github.com/bluesky-social/jetstream v0.0.0-20250414024304-d17bd81a945e
 	github.com/glebarez/go-sqlite v1.22.0
-	github.com/golang-jwt/jwt v3.2.2+incompatible
-	github.com/google/uuid v1.6.0
 	github.com/gorilla/sessions v1.4.0
 	github.com/haileyok/atproto-oauth-golang v0.0.2
 	github.com/joho/godotenv v1.5.1
@@ -29,6 +27,7 @@ require (
 	github.com/goccy/go-json v0.10.3 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-jwt/jwt/v5 v5.2.1 // indirect
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/securecookie v1.1.2 // indirect
 	github.com/gorilla/websocket v1.5.1 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect

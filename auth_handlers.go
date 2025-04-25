@@ -1,20 +1,13 @@
 package statusphere
 
 import (
-	"crypto/sha256"
 	_ "embed"
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
-	"time"
 
-	"github.com/golang-jwt/jwt"
-	"github.com/google/uuid"
 	"github.com/gorilla/sessions"
-	"github.com/lestrrat-go/jwx/v2/jwk"
 	"github.com/willdot/statusphere-go/oauth"
 )
 
@@ -194,61 +187,4 @@ func (s *Server) HandleLogOut(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Redirect(w, r, "/", http.StatusFound)
-}
-
-func pdsDpopJwt(method, url, iss, accessToken, nonce string, privateJwk jwk.Key) (string, error) {
-	pubJwk, err := privateJwk.PublicKey()
-	if err != nil {
-		return "", err
-	}
-
-	b, err := json.Marshal(pubJwk)
-	if err != nil {
-		return "", err
-	}
-
-	var pubMap map[string]any
-	if err := json.Unmarshal(b, &pubMap); err != nil {
-		return "", err
-	}
-
-	now := time.Now().Unix()
-
-	claims := jwt.MapClaims{
-		"iss": iss,
-		"iat": now,
-		"exp": now + 30,
-		"jti": uuid.NewString(),
-		"htm": method,
-		"htu": url,
-		"ath": generateCodeChallenge(accessToken),
-	}
-
-	if nonce != "" {
-		claims["nonce"] = nonce
-	}
-
-	token := jwt.NewWithClaims(jwt.SigningMethodES256, claims)
-	token.Header["typ"] = "dpop+jwt"
-	token.Header["alg"] = "ES256"
-	token.Header["jwk"] = pubMap
-
-	var rawKey any
-	if err := privateJwk.Raw(&rawKey); err != nil {
-		return "", err
-	}
-
-	tokenString, err := token.SignedString(rawKey)
-	if err != nil {
-		return "", fmt.Errorf("failed to sign token: %w", err)
-	}
-
-	return tokenString, nil
-}
-
-func generateCodeChallenge(pkceVerifier string) string {
-	h := sha256.New()
-	h.Write([]byte(pkceVerifier))
-	hash := h.Sum(nil)
-	return base64.RawURLEncoding.EncodeToString(hash)
 }

@@ -244,6 +244,10 @@ func (s *Service) PublicKey() []byte {
 	return s.jwks.public
 }
 
+func (s *Service) PdsDpopJwt(method, url string, session Session, privateKey jwk.Key) (string, error) {
+	return atoauth.PdsDpopJwt(method, url, session.AuthserverIss, session.AccessToken, session.DpopPdsNonce, privateKey)
+}
+
 func (s *Service) makeOAuthRequest(ctx context.Context, did, handle string, dpopPrivateKey jwk.Key) (*atoauth.SendParAuthResponse, *atoauth.OauthAuthorizationMetadata, string, error) {
 	service, err := s.resolveService(ctx, did)
 	if err != nil {
