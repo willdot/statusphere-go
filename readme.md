@@ -4,10 +4,13 @@ This is an implementation of the example [ATProto application Statusphere](https
 
 It makes use of an ATProto OAuth [library](https://github.com/haileyok/atproto-oauth-golang). Shout out to [Hailey](https://bsky.app/profile/hailey.at) for implementing a Go OAuth library!
 
-TLDR of what this app does if you haven't read the [ATProto application Statusphere](https://atproto.com/guides/applications) guide.
+### What is the Statusphere app?
+If you haven't read the [ATProto application Statusphere](https://atproto.com/guides/applications) guide about what this is, here is a quick summary.
 
 1: Allows you to log into Bluesky using OAuth.
+
 2: Allows you to post a status (an emoji) which creates a record in your PDS.
+
 3: Shows other users status' when they do the same, even if they are using a different app that this. As long as they are using the statusphere lexicon and NSID then this application will consume those records using Jetstream (firehose) and store them in the local database.
 
 ### Running the app
