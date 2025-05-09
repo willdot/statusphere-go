@@ -14,12 +14,12 @@ TLDR of what this app does if you haven't read the [ATProto application Statusph
 
 A few environment variables are required to run the app. Use the `example.env` file as a template and store your environment variables in a `.env` file.
 
-* PRIVATEJWKS: This is a private JWKS. You can generate one using the same Go OAuth [library](https://github.com/haileyok/atproto-oauth-golang).
+* PRIVATEJWKS: This is a private JWKS. You can generate one using the same Go OAuth [library](https://github.com/haileyok/atproto-oauth-golang). Once created, base64 encode it so it's easier to store in your env.
 * SESSION_KEY: This can be anything as it's what's used to encrypt session data sent to/from the client.
 * HOST: This needs to be a http URL where the server is running. For local dev I suggest using something like [ngrok](https://ngrok.com) to run you app locally and make it accessable externally. This is important for OAuth  as the callback URL configured needs to be a publically accessable.
 * DATABASE_MOUNT_PATH: This is where you wish the mysql database to be located.
 
-Run the command `go build -o statuspherego ./cmd/statuspherego/main.go` which will  build the app and then `./statuspherego` to run it.
+Run the command `go build -o statuspherego ./cmd/main.go` which will  build the app and then `./statuspherego` to run it.
 
 If running locally I would then run `ngrok http http://localhost:8080` to get your publically accessable URL.
 
