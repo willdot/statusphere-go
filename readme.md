@@ -23,7 +23,7 @@ Run the command `go build -o statuspherego ./cmd/statuspherego/main.go` which wi
 
 If running locally I would then run `ngrok http http://localhost:8080` to get your publically accessable URL.
 
-Go to the home page of the app, log in via OAuth and post your status!
+Go to the home page of the app, log in via OAuth and post your status.
 
 ### Contributing
 This is just a demo app and was mainly for me to learn how to build applications in the ATmosphere and I thought what better way than to use the example statusphere guide but do it in Go.
