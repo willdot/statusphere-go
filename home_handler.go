@@ -56,9 +56,10 @@ func (s *Server) HandleHome(w http.ResponseWriter, r *http.Request) {
 	data := HomeData{
 		AvailableStatus: Availablestatus,
 	}
-	usersDid, ok := s.getDidFromSession(r)
-	if ok {
-		profile, err := s.getUserProfileForDid(usersDid)
+
+	did, _ := s.currentSessionDID(r)
+	if did != nil {
+		profile, err := s.getUserProfileForDid(did.String())
 		if err != nil {
 			slog.Error("getting logged in users profile", "error", err)
 		}
@@ -107,36 +108,50 @@ func (s *Server) HandleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	did, ok := s.getDidFromSession(r)
-	if !ok {
-		http.Error(w, "failed to get did from session", http.StatusBadRequest)
+	did, sessionID := s.currentSessionDID(r)
+	if did == nil {
+		http.Redirect(w, r, "/login", http.StatusFound)
 		return
 	}
 
-	oauthSession, err := s.oauthService.GetOauthSession(r.Context(), did)
+	slog.Info("session", "did", did.String(), "session id", sessionID)
+
+	oauthSess, err := s.oauthClient.ResumeSession(r.Context(), *did, sessionID)
 	if err != nil {
-		http.Error(w, "failed to get oauth session", http.StatusInternalServerError)
+		http.Error(w, "not authenticated", http.StatusUnauthorized)
 		return
 	}
+	c := oauthSess.APIClient()
 
 	createdAt := time.Now()
-	uri, err := s.CreateNewStatus(r.Context(), oauthSession, status, createdAt)
+
+	bodyReq := map[string]any{
+		"repo":       c.AccountDID.String(),
+		"collection": "xyz.statusphere.status",
+		"record": map[string]any{
+			"status":    status,
+			"createdAt": createdAt,
+		},
+	}
+	var result CreateRecordResp
+	err = c.Post(r.Context(), "com.atproto.repo.createRecord", bodyReq, &result)
 	if err != nil {
 		slog.Error("failed to create new status", "error", err)
+		http.Redirect(w, r, "/", http.StatusFound)
+		return
 	}
 
-	if uri != "" {
-		statusToStore := Status{
-			URI:       uri,
-			Did:       did,
-			Status:    status,
-			CreatedAt: createdAt.UnixMilli(),
-			IndexedAt: time.Now().UnixMilli(),
-		}
-		err = s.store.CreateStatus(statusToStore)
-		if err != nil {
-			slog.Error("failed to store status that has been created", "error", err)
-		}
+	statusToStore := Status{
+		URI:       result.URI,
+		Did:       c.AccountDID.String(),
+		Status:    status,
+		CreatedAt: createdAt.UnixMilli(),
+		IndexedAt: time.Now().UnixMilli(),
+	}
+
+	err = s.store.CreateStatus(statusToStore)
+	if err != nil {
+		slog.Error("failed to store status that has been created", "error", err)
 	}
 
 	http.Redirect(w, r, "/", http.StatusFound)

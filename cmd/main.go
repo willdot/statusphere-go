@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"log/slog"
 	"net/http"
@@ -13,10 +14,10 @@ import (
 	"time"
 
 	"github.com/avast/retry-go/v4"
+	"github.com/bluesky-social/indigo/atproto/auth/oauth"
 	"github.com/joho/godotenv"
 	"github.com/willdot/statusphere-go"
 	"github.com/willdot/statusphere-go/database"
-	"github.com/willdot/statusphere-go/oauth"
 )
 
 const (
@@ -60,13 +61,25 @@ func main() {
 		},
 	}
 
-	oauthService, err := oauth.NewService(db, host, httpClient)
-	if err != nil {
-		slog.Error("creating new oauth service", "error", err)
-		return
+	var config oauth.ClientConfig
+	bind := ":8080"
+	scopes := []string{"atproto", "transition:generic"}
+	if host == "" {
+		config = oauth.NewLocalhostConfig(
+			fmt.Sprintf("http://127.0.0.1%s/oauth/callback", bind),
+			scopes,
+		)
+		slog.Info("configuring localhost OAuth client", "CallbackURL", config.CallbackURL)
+	} else {
+		config = oauth.NewPublicConfig(
+			fmt.Sprintf("%s/oauth/client-metadata.json", host),
+			fmt.Sprintf("%s/oauth/oauth-callback", host),
+			scopes,
+		)
 	}
+	oauthClient := oauth.NewClientApp(&config, db)
 
-	server, err := statusphere.NewServer(host, 8080, db, oauthService, httpClient)
+	server, err := statusphere.NewServer(host, 8080, db, oauthClient, httpClient)
 	if err != nil {
 		slog.Error("create new server", "error", err)
 		return

@@ -15,7 +15,7 @@ import (
 
 	"github.com/gorilla/sessions"
 
-	"github.com/willdot/statusphere-go/oauth"
+	"github.com/bluesky-social/indigo/atproto/auth/oauth"
 )
 
 var ErrorNotFound = fmt.Errorf("not found")
@@ -38,12 +38,13 @@ type Server struct {
 	httpserver   *http.Server
 	sessionStore *sessions.CookieStore
 	templates    []*template.Template
-	oauthService *oauth.Service
-	store        Store
-	httpClient   *http.Client
+
+	oauthClient *oauth.ClientApp
+	store       Store
+	httpClient  *http.Client
 }
 
-func NewServer(host string, port int, store Store, oauthService *oauth.Service, httpClient *http.Client) (*Server, error) {
+func NewServer(host string, port int, store Store, oauthClient *oauth.ClientApp, httpClient *http.Client) (*Server, error) {
 	sessionStore := sessions.NewCookieStore([]byte(os.Getenv("SESSION_KEY")))
 
 	homeTemplate, err := template.ParseFiles("./html/home.html")
@@ -62,7 +63,7 @@ func NewServer(host string, port int, store Store, oauthService *oauth.Service, 
 
 	srv := &Server{
 		host:         host,
-		oauthService: oauthService,
+		oauthClient:  oauthClient,
 		sessionStore: sessionStore,
 		templates:    templates,
 		store:        store,
@@ -78,9 +79,9 @@ func NewServer(host string, port int, store Store, oauthService *oauth.Service, 
 	mux.HandleFunc("POST /logout", srv.HandleLogOut)
 
 	mux.HandleFunc("/public/app.css", serveCSS)
-	mux.HandleFunc("/jwks.json", srv.serveJwks)
-	mux.HandleFunc("/client-metadata.json", srv.serveClientMetadata)
-	mux.HandleFunc("/oauth-callback", srv.handleOauthCallback)
+	mux.HandleFunc("/oauth/jwks.json", srv.serveJwks)
+	mux.HandleFunc("/oauth/client-metadata.json", srv.serveClientMetadata)
+	mux.HandleFunc("/oauth/oauth-callback", srv.handleOauthCallback)
 
 	addr := fmt.Sprintf("0.0.0.0:%d", port)
 	srv.httpserver = &http.Server{
@@ -113,7 +114,16 @@ func (s *Server) getTemplate(name string) *template.Template {
 
 func (s *Server) serveJwks(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(s.oauthService.PublicKey())
+
+	public := s.oauthClient.Config.PublicJWKS()
+	b, err := json.Marshal(public)
+	if err != nil {
+		slog.Error("failed to marshal oauth public JWKS", "error", err)
+		http.Error(w, "marshal public JWKS", http.StatusInternalServerError)
+		return
+	}
+
+	_, _ = w.Write(b)
 }
 
 //go:embed html/app.css
@@ -125,19 +135,13 @@ func serveCSS(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) serveClientMetadata(w http.ResponseWriter, r *http.Request) {
-	metadata := map[string]any{
-		"client_id":                       fmt.Sprintf("%s/client-metadata.json", s.host),
-		"client_name":                     "Bsky-bookmark",
-		"client_uri":                      s.host,
-		"redirect_uris":                   []string{fmt.Sprintf("%s/oauth-callback", s.host)},
-		"grant_types":                     []string{"authorization_code", "refresh_token"},
-		"response_types":                  []string{"code"},
-		"application_type":                "web",
-		"dpop_bound_access_tokens":        true,
-		"jwks_uri":                        fmt.Sprintf("%s/jwks.json", s.host),
-		"scope":                           "atproto transition:generic",
-		"token_endpoint_auth_method":      "private_key_jwt",
-		"token_endpoint_auth_signing_alg": "ES256",
+	metadata := s.oauthClient.Config.ClientMetadata()
+	clientName := "statusphere-go"
+	metadata.ClientName = &clientName
+	metadata.ClientURI = &s.host
+	if s.oauthClient.Config.IsConfidential() {
+		jwksURI := fmt.Sprintf("%s/oauth/jwks.json", r.Host)
+		metadata.JWKSURI = &jwksURI
 	}
 
 	b, err := json.Marshal(metadata)
@@ -148,21 +152,6 @@ func (s *Server) serveClientMetadata(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(b)
-}
-
-func (s *Server) getDidFromSession(r *http.Request) (string, bool) {
-	session, err := s.sessionStore.Get(r, "oauth-session")
-	if err != nil {
-		slog.Error("getting session", "error", err)
-		return "", false
-	}
-
-	did, ok := session.Values["did"].(string)
-	if !ok {
-		return "", false
-	}
-
-	return did, true
 }
 
 func (s *Server) getUserProfileForDid(did string) (UserProfile, error) {

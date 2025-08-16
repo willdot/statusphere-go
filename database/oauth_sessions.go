@@ -1,26 +1,31 @@
 package database
 
 import (
+	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 
-	"github.com/willdot/statusphere-go/oauth"
+	"github.com/bluesky-social/indigo/atproto/auth/oauth"
+	"github.com/bluesky-social/indigo/atproto/syntax"
 )
 
 func createOauthSessionsTable(db *sql.DB) error {
 	createOauthSessionsTableSQL := `CREATE TABLE IF NOT EXISTS oauthsessions (
 		"id" integer NOT NULL PRIMARY KEY AUTOINCREMENT,
-		"did" TEXT,
-		"pdsUrl" TEXT,
-		"authserverIss" TEXT,
+		"accountDID" TEXT,
+		"sessionID" TEXT,
+		"hostURL" TEXT,
+		"authServerURL" TEXT,
+		"authServerTokenEndpoint" TEXT,
+		"scopes" TEXT,
 		"accessToken" TEXT,
 		"refreshToken" TEXT,
-		"dpopPdsNonce" TEXT,
-		"dpopAuthserverNonce" TEXT,
-		"dpopPrivateJwk" TEXT,
-		"expiration" integer,
-		UNIQUE(did)
+		"dpopAuthServerNonce" TEXT,
+		"dpopHostNonce" TEXT,
+		"dpopPrivateKeyMultibase" TEXT,
+		UNIQUE(accountDID)
 	  );`
 
 	slog.Info("Create oauthsessions table...")
@@ -37,58 +42,56 @@ func createOauthSessionsTable(db *sql.DB) error {
 	return nil
 }
 
-func (d *DB) CreateOauthSession(session oauth.Session) error {
-	sql := `INSERT INTO oauthsessions (did, pdsUrl, authserverIss, accessToken, refreshToken, dpopPdsNonce, dpopAuthserverNonce, dpopPrivateJwk, expiration) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(did) DO NOTHING;` // TODO: update on conflict
-	_, err := d.db.Exec(sql, session.Did, session.PdsUrl, session.AuthserverIss, session.AccessToken, session.RefreshToken, session.DpopPdsNonce, session.DpopAuthserverNonce, session.DpopPrivateJwk, session.Expiration)
+func (d *DB) SaveSession(ctx context.Context, sess oauth.ClientSessionData) error {
+	scopes, err := json.Marshal(sess.Scopes)
 	if err != nil {
+		return fmt.Errorf("marshalling scopes: %w", err)
+	}
+
+	slog.Info("session to save", "did", sess.AccountDID.String(), "session id", sess.SessionID)
+
+	sql := `INSERT INTO oauthsessions (accountDID, sessionID, hostURL,  authServerURL, authServerTokenEndpoint, scopes, accessToken, refreshToken, dpopAuthServerNonce, dpopHostNonce, dpopPrivateKeyMultibase) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(accountDID) DO NOTHING;` // TODO: update on conflict
+	_, err = d.db.Exec(sql, sess.AccountDID.String(), sess.SessionID, sess.HostURL, sess.AuthServerURL, sess.AuthServerTokenEndpoint, string(scopes), sess.AccessToken, sess.RefreshToken, sess.DPoPAuthServerNonce, sess.DPoPHostNonce, sess.DPoPPrivateKeyMultibase)
+	if err != nil {
+		slog.Error("saving session", "error", err)
 		return fmt.Errorf("exec insert oauth session: %w", err)
 	}
 
 	return nil
 }
 
-func (d *DB) GetOauthSession(did string) (oauth.Session, error) {
-	var session oauth.Session
-	sql := "SELECT * FROM oauthsessions WHERE did = ?;"
-	rows, err := d.db.Query(sql, did)
+func (d *DB) GetSession(ctx context.Context, did syntax.DID, sessionID string) (*oauth.ClientSessionData, error) {
+	var session oauth.ClientSessionData
+	sql := "SELECT hostURL, authServerURL, authServerTokenEndpoint, scopes, accessToken, refreshToken, dpopAuthServerNonce, dpopHostNonce, dpopPrivateKeyMultibase FROM oauthsessions where accountDID = ? AND sessionID = ?;"
+	rows, err := d.db.Query(sql, did.String(), sessionID)
 	if err != nil {
-		return session, fmt.Errorf("run query to get oauth session: %w", err)
+		return nil, fmt.Errorf("run query to get oauth session: %w", err)
 	}
 	defer rows.Close()
 
+	scopes := ""
 	for rows.Next() {
-		if err := rows.Scan(&session.ID, &session.Did, &session.PdsUrl, &session.AuthserverIss, &session.AccessToken, &session.RefreshToken, &session.DpopPdsNonce, &session.DpopAuthserverNonce, &session.DpopPrivateJwk, &session.Expiration); err != nil {
-			return session, fmt.Errorf("scan row: %w", err)
+		if err := rows.Scan(&session.HostURL, &session.AuthServerURL, &session.AuthServerTokenEndpoint, &scopes, &session.AccessToken, &session.RefreshToken, &session.DPoPAuthServerNonce, &session.DPoPHostNonce, &session.DPoPPrivateKeyMultibase); err != nil {
+			return nil, fmt.Errorf("scan row: %w", err)
+		}
+		session.AccountDID = did
+
+		var parsedScopes []string
+		err = json.Unmarshal([]byte(scopes), &parsedScopes)
+		if err != nil {
+			return nil, fmt.Errorf("parsing scopes: %w", err)
 		}
 
-		return session, nil
+		session.Scopes = parsedScopes
+
+		return &session, nil
 	}
-	return session, fmt.Errorf("not found")
+	return nil, fmt.Errorf("not found")
 }
 
-func (d *DB) UpdateOauthSession(accessToken, refreshToken, dpopAuthServerNonce, did string, expiration int64) error {
-	sql := `UPDATE oauthsessions SET accessToken = ?, refreshToken = ?, dpopAuthserverNonce = ?, expiration = ? where did = ?`
-	_, err := d.db.Exec(sql, accessToken, refreshToken, dpopAuthServerNonce, expiration, did)
-	if err != nil {
-		return fmt.Errorf("exec update oauth session: %w", err)
-	}
-
-	return nil
-}
-
-func (d *DB) UpdateOauthSessionDpopPdsNonce(dpopPdsServerNonce, did string) error {
-	sql := `UPDATE oauthsessions SET dpopPdsNonce = ? where did = ?`
-	_, err := d.db.Exec(sql, dpopPdsServerNonce, did)
-	if err != nil {
-		return fmt.Errorf("exec update oauth session dpop pds nonce: %w", err)
-	}
-
-	return nil
-}
-
-func (d *DB) DeleteOauthSession(did string) error {
-	sql := "DELETE FROM oauthsessions WHERE did = ?;"
-	_, err := d.db.Exec(sql, did)
+func (d *DB) DeleteSession(ctx context.Context, did syntax.DID, sessionID string) error {
+	sql := "DELETE FROM oauthsessions WHERE accountDID = ?;"
+	_, err := d.db.Exec(sql, did.String())
 	if err != nil {
 		return fmt.Errorf("exec delete oauth session: %w", err)
 	}
