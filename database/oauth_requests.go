@@ -1,24 +1,28 @@
 package database
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log/slog"
 
-	"github.com/willdot/statusphere-go/oauth"
+	"github.com/bluesky-social/indigo/atproto/auth/oauth"
+	"github.com/bluesky-social/indigo/atproto/syntax"
 )
 
 func createOauthRequestsTable(db *sql.DB) error {
 	createOauthRequestsTableSQL := `CREATE TABLE IF NOT EXISTS oauthrequests (
 		"id" integer NOT NULL PRIMARY KEY AUTOINCREMENT,
-		"authserverIss" TEXT,
 		"state" TEXT,
-		"did" TEXT,
-		"pdsUrl" TEXT,
+		"authServerURL" TEXT,
+		"accountDID" TEXT,
+		"scope" TEXT,
+		"requestURI" TEXT,
+		"authServerTokenEndpoint" TEXT,
 		"pkceVerifier" TEXT,
 		"dpopAuthserverNonce" TEXT,
-		"dpopPrivateJwk" TEXT,
-		UNIQUE(did,state)
+		"dpopPrivateKeyMultibase" TEXT,
+		UNIQUE(state)
 	  );`
 
 	slog.Info("Create oauthrequests table...")
@@ -35,36 +39,52 @@ func createOauthRequestsTable(db *sql.DB) error {
 	return nil
 }
 
-func (d *DB) CreateOauthRequest(request oauth.Request) error {
-	sql := `INSERT INTO oauthrequests (authserverIss, state, did, pdsUrl, pkceVerifier, dpopAuthServerNonce, dpopPrivateJwk) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(did,state) DO NOTHING;`
-	_, err := d.db.Exec(sql, request.AuthserverIss, request.State, request.Did, request.PdsURL, request.PkceVerifier, request.DpopAuthserverNonce, request.DpopPrivateJwk)
+func (d *DB) SaveAuthRequestInfo(ctx context.Context, info oauth.AuthRequestData) error {
+	did := ""
+	if info.AccountDID != nil {
+		did = info.AccountDID.String()
+	}
+
+	sql := `INSERT INTO oauthrequests (state, authServerURL, accountDID, scope, requestURI, authServerTokenEndpoint, pkceVerifier, dpopAuthserverNonce, dpopPrivateKeyMultibase) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(state) DO NOTHING;`
+	_, err := d.db.Exec(sql, info.State, info.AuthServerURL, did, info.Scope, info.RequestURI, info.AuthServerTokenEndpoint, info.PKCEVerifier, info.DPoPAuthServerNonce, info.DPoPPrivateKeyMultibase)
 	if err != nil {
+		slog.Error("saving auth request info", "error", err)
 		return fmt.Errorf("exec insert oauth request: %w", err)
 	}
 
 	return nil
 }
 
-func (d *DB) GetOauthRequest(state string) (oauth.Request, error) {
-	var oauthRequest oauth.Request
-	sql := "SELECT authserverIss, state, did, pdsUrl, pkceVerifier, dpopAuthServerNonce, dpopPrivateJwk FROM oauthrequests WHERE state = ?;"
+func (d *DB) GetAuthRequestInfo(ctx context.Context, state string) (*oauth.AuthRequestData, error) {
+	var oauthRequest oauth.AuthRequestData
+	sql := "SELECT state, authServerURL, accountDID, scope, requestURI, authServerTokenEndpoint, pkceVerifier, dpopAuthserverNonce, dpopPrivateKeyMultibase FROM oauthrequests where state = ?;"
 	rows, err := d.db.Query(sql, state)
 	if err != nil {
-		return oauthRequest, fmt.Errorf("run query to get oauth request: %w", err)
+		return nil, fmt.Errorf("run query to get oauth request: %w", err)
 	}
 	defer rows.Close()
 
+	var did string
+
 	for rows.Next() {
-		if err := rows.Scan(&oauthRequest.AuthserverIss, &oauthRequest.State, &oauthRequest.Did, &oauthRequest.PdsURL, &oauthRequest.PkceVerifier, &oauthRequest.DpopAuthserverNonce, &oauthRequest.DpopPrivateJwk); err != nil {
-			return oauthRequest, fmt.Errorf("scan row: %w", err)
+		if err := rows.Scan(&oauthRequest.State, &oauthRequest.AuthServerURL, &did, &oauthRequest.Scope, &oauthRequest.RequestURI, &oauthRequest.AuthServerTokenEndpoint, &oauthRequest.PKCEVerifier, &oauthRequest.DPoPAuthServerNonce, &oauthRequest.DPoPPrivateKeyMultibase); err != nil {
+			return nil, fmt.Errorf("scan row: %w", err)
 		}
 
-		return oauthRequest, nil
+		if did != "" {
+			parsedDID, err := syntax.ParseDID(did)
+			if err != nil {
+				return nil, fmt.Errorf("invalid DID stored in record: %w", err)
+			}
+			oauthRequest.AccountDID = &parsedDID
+		}
+
+		return &oauthRequest, nil
 	}
-	return oauthRequest, fmt.Errorf("not found")
+	return nil, fmt.Errorf("not found")
 }
 
-func (d *DB) DeleteOauthRequest(state string) error {
+func (d *DB) DeleteAuthRequestInfo(ctx context.Context, state string) error {
 	sql := "DELETE FROM oauthrequests WHERE state = ?;"
 	_, err := d.db.Exec(sql, state)
 	if err != nil {

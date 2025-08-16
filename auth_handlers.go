@@ -2,13 +2,10 @@ package statusphere
 
 import (
 	_ "embed"
-	"fmt"
 	"log/slog"
 	"net/http"
-	"net/url"
 
-	"github.com/gorilla/sessions"
-	"github.com/willdot/statusphere-go/oauth"
+	"github.com/bluesky-social/indigo/atproto/syntax"
 )
 
 type LoginData struct {
@@ -18,8 +15,8 @@ type LoginData struct {
 
 func (s *Server) authMiddleware(next func(http.ResponseWriter, *http.Request)) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		_, ok := s.getDidFromSession(r)
-		if !ok {
+		did, _ := s.currentSessionDID(r)
+		if did == nil {
 			http.Redirect(w, r, "/login", http.StatusFound)
 			return
 		}
@@ -48,7 +45,7 @@ func (s *Server) HandlePostLogin(w http.ResponseWriter, r *http.Request) {
 
 	handle := r.FormValue("handle")
 
-	result, err := s.oauthService.StartOAuthFlow(r.Context(), handle)
+	redirectURL, err := s.oauthClient.StartAuthFlow(r.Context(), handle)
 	if err != nil {
 		slog.Error("starting oauth flow", "error", err)
 		data.Error = "error logging in"
@@ -56,98 +53,27 @@ func (s *Server) HandlePostLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	u, _ := url.Parse(result.AuthorizationEndpoint)
-	u.RawQuery = fmt.Sprintf("client_id=%s&request_uri=%s", url.QueryEscape(fmt.Sprintf("%s/client-metadata.json", s.host)), result.RequestURI)
-
-	// ignore error here as it only returns an error for decoding an existing session but it will always return a session anyway which
-	// is what we want
-	session, _ := s.sessionStore.Get(r, "oauth-session")
-	session.Values = map[any]any{}
-
-	session.Options = &sessions.Options{
-		Path:     "/",
-		MaxAge:   300, // save for five minutes
-		HttpOnly: true,
-	}
-
-	session.Values["oauth_state"] = result.State
-	session.Values["oauth_did"] = result.DID
-
-	err = session.Save(r, w)
-	if err != nil {
-		slog.Error("save session", "error", err)
-		data.Error = "error logging in"
-		tmpl.Execute(w, data)
-		return
-	}
-
-	http.Redirect(w, r, u.String(), http.StatusFound)
+	http.Redirect(w, r, redirectURL, http.StatusFound)
 }
 
 func (s *Server) handleOauthCallback(w http.ResponseWriter, r *http.Request) {
 	tmpl := s.getTemplate("login.html")
 	data := LoginData{}
 
-	resState := r.FormValue("state")
-	resIss := r.FormValue("iss")
-	resCode := r.FormValue("code")
-
-	session, err := s.sessionStore.Get(r, "oauth-session")
+	sessData, err := s.oauthClient.ProcessCallback(r.Context(), r.URL.Query())
 	if err != nil {
-		slog.Error("getting session", "error", err)
+		slog.Error("processing OAuth callback", "error", err)
 		data.Error = "error logging in"
 		tmpl.Execute(w, data)
 		return
 	}
 
-	if resState == "" || resIss == "" || resCode == "" {
-		slog.Error("request missing needed parameters")
-		data.Error = "error logging in"
-		tmpl.Execute(w, data)
-		return
-	}
-
-	sessionState, ok := session.Values["oauth_state"].(string)
-	if !ok {
-		slog.Error("oauth_state not found in sesssion")
-		data.Error = "error logging in"
-		tmpl.Execute(w, data)
-		return
-	}
-
-	if resState != sessionState {
-		slog.Error("session state does not match response state")
-		data.Error = "error logging in"
-		tmpl.Execute(w, data)
-		return
-	}
-
-	params := oauth.CallBackParams{
-		Iss:   resIss,
-		State: resState,
-		Code:  resCode,
-	}
-	usersDID, err := s.oauthService.OAuthCallback(r.Context(), params)
-	if err != nil {
-		slog.Error("handling oauth callback", "error", err)
-		data.Error = "error logging in"
-		tmpl.Execute(w, data)
-		return
-	}
-
-	session.Options = &sessions.Options{
-		Path:     "/",
-		MaxAge:   86400 * 7,
-		HttpOnly: true,
-	}
-
-	// make sure the session is empty before setting new values
-	session.Values = map[any]any{}
-	session.Values["did"] = usersDID
-
-	err = session.Save(r, w)
-	if err != nil {
-		slog.Error("save session", "error", err)
+	// create signed cookie session, indicating account DID
+	sess, _ := s.sessionStore.Get(r, "oauth-demo")
+	sess.Values["account_did"] = sessData.AccountDID.String()
+	sess.Values["session_id"] = sessData.SessionID
+	if err := sess.Save(r, w); err != nil {
+		slog.Error("storing session data", "error", err)
 		data.Error = "error logging in"
 		tmpl.Execute(w, data)
 		return
@@ -157,34 +83,38 @@ func (s *Server) handleOauthCallback(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) HandleLogOut(w http.ResponseWriter, r *http.Request) {
-	session, err := s.sessionStore.Get(r, "oauth-session")
-	if err != nil {
-		slog.Error("getting session", "error", err)
-		http.Redirect(w, r, "/", http.StatusFound)
-		return
-	}
-
-	did, ok := session.Values["did"]
-	if ok {
-		err = s.oauthService.DeleteOAuthSession(fmt.Sprintf("%s", did))
+	did, sessionID := s.currentSessionDID(r)
+	if did != nil {
+		err := s.oauthClient.Store.DeleteSession(r.Context(), *did, sessionID)
 		if err != nil {
 			slog.Error("deleting oauth session", "error", err)
 		}
 	}
 
-	session.Values = map[any]any{}
-	session.Options = &sessions.Options{
-		Path:     "/",
-		MaxAge:   -1,
-		HttpOnly: true,
-	}
-
-	err = session.Save(r, w)
+	sess, _ := s.sessionStore.Get(r, "oauth-demo")
+	sess.Values = make(map[any]any)
+	err := sess.Save(r, w)
 	if err != nil {
-		slog.Error("save session", "error", err)
-		http.Redirect(w, r, "/", http.StatusFound)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-
 	http.Redirect(w, r, "/", http.StatusFound)
+}
+
+func (s *Server) currentSessionDID(r *http.Request) (*syntax.DID, string) {
+	sess, _ := s.sessionStore.Get(r, "oauth-demo")
+	accountDID, ok := sess.Values["account_did"].(string)
+	if !ok || accountDID == "" {
+		return nil, ""
+	}
+	did, err := syntax.ParseDID(accountDID)
+	if err != nil {
+		return nil, ""
+	}
+	sessionID, ok := sess.Values["session_id"].(string)
+	if !ok || sessionID == "" {
+		return nil, ""
+	}
+
+	return &did, sessionID
 }
