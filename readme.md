@@ -2,8 +2,6 @@
 
 This is an implementation of the example [ATProto application Statusphere](https://atproto.com/guides/applications) but in Go.
 
-It makes use of an ATProto OAuth [library](https://github.com/haileyok/atproto-oauth-golang). Shout out to [Hailey](https://bsky.app/profile/hailey.at) for implementing a Go OAuth library!
-
 ### What is the Statusphere app?
 If you haven't read the [ATProto application Statusphere](https://atproto.com/guides/applications) guide about what this is, here is a quick summary.
 
@@ -17,7 +15,7 @@ If you haven't read the [ATProto application Statusphere](https://atproto.com/gu
 
 A few environment variables are required to run the app. Use the `example.env` file as a template and store your environment variables in a `.env` file.
 
-* PRIVATEJWKS: This is a private JWKS. You can generate one using the same Go OAuth [library](https://github.com/haileyok/atproto-oauth-golang). Once created, base64 encode it so it's easier to store in your env.
+* PRIVATEJWKS: This is a private JWKS. You can generate one using this Go OAuth [library](https://github.com/haileyok/atproto-oauth-golang). Once created, base64 encode it so it's easier to store in your env.
 * SESSION_KEY: This can be anything as it's what's used to encrypt session data sent to/from the client.
 * HOST: This needs to be a http URL where the server is running. For local dev I suggest using something like [ngrok](https://ngrok.com) to run you app locally and make it accessable externally. This is important for OAuth  as the callback URL configured needs to be a publically accessable.
 * DATABASE_MOUNT_PATH: This is where you wish the mysql database to be located.

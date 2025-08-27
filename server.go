@@ -79,9 +79,9 @@ func NewServer(host string, port int, store Store, oauthClient *oauth.ClientApp,
 	mux.HandleFunc("POST /logout", srv.HandleLogOut)
 
 	mux.HandleFunc("/public/app.css", serveCSS)
-	mux.HandleFunc("/oauth/jwks.json", srv.serveJwks)
-	mux.HandleFunc("/oauth/client-metadata.json", srv.serveClientMetadata)
-	mux.HandleFunc("/oauth/oauth-callback", srv.handleOauthCallback)
+	mux.HandleFunc("/jwks.json", srv.serveJwks)
+	mux.HandleFunc("/oauth-client-metadata.json", srv.serveClientMetadata)
+	mux.HandleFunc("/oauth-callback", srv.handleOauthCallback)
 
 	addr := fmt.Sprintf("0.0.0.0:%d", port)
 	srv.httpserver = &http.Server{
@@ -140,7 +140,7 @@ func (s *Server) serveClientMetadata(w http.ResponseWriter, r *http.Request) {
 	metadata.ClientName = &clientName
 	metadata.ClientURI = &s.host
 	if s.oauthClient.Config.IsConfidential() {
-		jwksURI := fmt.Sprintf("%s/oauth/jwks.json", r.Host)
+		jwksURI := fmt.Sprintf("%s/jwks.json", r.Host)
 		metadata.JWKSURI = &jwksURI
 	}
 

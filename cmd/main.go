@@ -66,14 +66,14 @@ func main() {
 	scopes := []string{"atproto", "transition:generic"}
 	if host == "" {
 		config = oauth.NewLocalhostConfig(
-			fmt.Sprintf("http://127.0.0.1%s/oauth/callback", bind),
+			fmt.Sprintf("http://127.0.0.1%s/oauth-callback", bind),
 			scopes,
 		)
 		slog.Info("configuring localhost OAuth client", "CallbackURL", config.CallbackURL)
 	} else {
 		config = oauth.NewPublicConfig(
-			fmt.Sprintf("%s/oauth/client-metadata.json", host),
-			fmt.Sprintf("%s/oauth/oauth-callback", host),
+			fmt.Sprintf("%s/oauth-client-metadata.json", host),
+			fmt.Sprintf("%s/oauth-callback", host),
 			scopes,
 		)
 	}
