@@ -1,5 +1,7 @@
 ## Statusphere Go
 
+
+
 This is an implementation of the example [ATProto application Statusphere](https://atproto.com/guides/applications) but in Go.
 
 ### What is the Statusphere app?
